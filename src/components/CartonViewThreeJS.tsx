@@ -154,7 +154,7 @@ export default function CartonViewThreeJS({ carton, box, bundle }: { carton: Car
   const camDist = maxDim * 1.5;
   const camY = cartonHeight * 1.5;
   return (
-    <div style={{ width: '100%', height: '200px', minHeight: '400px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '00px', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', position: 'relative' }}>
       <Canvas
         gl={{ preserveDrawingBuffer: true }}
         camera={{

@@ -414,7 +414,7 @@ export default function PalletViewThreeJS({ pallet }: { pallet: PalletDto }) {
   const camDist = maxDim * 2.5;
   const camY = palletHeight * 3 + dims.baseThickness;
   return (
-    <div style={{ width: '100%', height: '300px', minHeight: '450px', display: 'flex', alignItems: 'flex-start', paddingBottom: '00px', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: 0, display: 'flex', alignItems: 'flex-start', position: 'relative' }}>
       <Canvas
         gl={{ preserveDrawingBuffer: true }}
         camera={{
