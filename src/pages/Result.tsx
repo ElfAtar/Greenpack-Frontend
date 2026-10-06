@@ -90,7 +90,7 @@ const headerMap: Record<string, string> = {
   "Bundle 2. boyut kutu sayisi": "Bundle 2. Boyut",
   "Bundle 3. boyut kutu sayisi": "Bundle 3. Boyut",
   "Bundle ici kutu sayisi": "Bundle İçi Kutu Sayısı",
-  "Koli ici bundle/kutu sayisi": "Koli İçi Bundle/Kutu Sayısı",
+  "Koli ici adet": "Koli İçi Adet",
   "Koli Utilization (%)": "Koli Utilization (%)",
   "Mevcut Koli Utilization (%)": "Mevcut Koli Utilization (%)",
   "Koli Utilization Iyilesme (%)": "Koli Utilization İyileşme (%)",
@@ -119,7 +119,7 @@ const headerMap: Record<string, string> = {
 
 // Table column definitions - Updated to match the required structure
 const koliTableColumns = [
-  "Option", "Koli", "Kolileme Yontemi", "Koli ici bundle/kutu sayisi",
+  "Option", "Koli", "Kolileme Yontemi", "Koli ici adet",
   "Koli Utilization (%)", "Mevcut Koli Utilization (%)", "Koli Utilization Iyilesme (%)"
 ];
 
@@ -365,6 +365,15 @@ const ProductDetail: React.FC<{
       return sortConfig.direction === 'asc' ? comparison : -comparison;
     });
   }, [rows, sortConfig]);
+  
+  // "Koli İçi Adet" display: "50 kutu" or "72 kutu (72 bundle)"
+  const isBundledProduct = !!apiResponse?.products?.find(p => p.ProductKey === productName)?.IsBundleRequired;
+  const formatCartonContent = (row: string[], boxCount: string) => {
+    if (!boxCount) return '';
+    if (!isBundledProduct) return `${boxCount} kutu`;
+    const bundleCount = getValue(row, 'Koli ici bundle sayisi');
+    return bundleCount ? `${boxCount} kutu (${bundleCount} bundle)` : `${boxCount} kutu`;
+  };
 
   const renderTable = (columns: string[], title: string) => {
     // Debug: Log table rendering
@@ -539,6 +548,8 @@ const ProductDetail: React.FC<{
                             )}
                             {getDisplayValue(column, value, rIdx)}
                           </span>
+                          ) : column === 'Koli ici adet' ? (
+                          formatCartonContent(row, value)
                         ) : (
                           getDisplayValue(column, value, rIdx)
                         )}
@@ -606,12 +617,81 @@ const ProductDetail: React.FC<{
 
   const hasCostData = hasUnitCosts();
 
+  // ===== Mevcut boşluklar kartı =====
+  const currentProduct = apiResponse?.products?.find(p => p.ProductKey === productName);
+  const currentCartonUtil = currentProduct?.CurrentCartonUtilization;
+  const isOverFull = typeof currentCartonUtil === 'number' && currentCartonUtil > 100;
+
+  // Sahada koli başına konan kutu ve modelin mevcut koliye yerleştirebildiği en fazla kutu
+  const currentPerCarton = currentProduct && Number(currentProduct.NKoli) > 0
+    ? Number(currentProduct.NBox) / Number(currentProduct.NKoli)
+    : null;
+  const ownCartonCounts = (apiResponse?.BestCombinations || [])
+    .filter(b => b.ProductKey === productName && b.IsDefault)
+    .map(b => Number(b.NBoxInCarton) || 0);
+  const bestOwnCarton = ownCartonCounts.length > 0 ? Math.max(...ownCartonCounts) : null;
+  const isOwnCartonWorse = currentPerCarton !== null && bestOwnCarton !== null && bestOwnCarton < currentPerCarton;
+  const showGapCard = isOverFull || isOwnCartonWorse;
+
+  // Hangi boşluk ayarları geçerli (makine / el)
+  const productCombo = apiResponse?.BestCombinations?.find(b => b.ProductKey === productName);
+  const methodText = String(productCombo?.CartoningMethod || '').toLowerCase();
+  const isMachine = methodText === 'machine' || methodText === 'makine';
+  const dv = apiResponse?.DefaultValues;
+
+  // Tablo satırları: koli yönleri
+  const fmtNum = (v: number) => (Number.isInteger(v) ? v : v.toFixed(1));
+  const gapAxes = [
+    { label: 'En',  unit: 'kutu', current: currentProduct?.CurrentGapWidth,     count: currentProduct?.CurrentCountWidth,     setting: dv ? (isMachine ? dv.MachineGapWidth     : dv.HandGapWidth)     : undefined },
+    { label: 'Boy',  unit: 'kutu', current: currentProduct?.CurrentGapThickness, count: currentProduct?.CurrentCountThickness, setting: dv ? (isMachine ? dv.MachineGapThickness : dv.HandGapThickness) : undefined },
+    { label: 'Yükseklik', unit: 'kutu', current: currentProduct?.CurrentGapHeight,    count: currentProduct?.CurrentCountHeight,    setting: dv ? (isMachine ? dv.MachineGapHeight    : dv.HandGapHeight)    : undefined },
+  ];
+  const hasLayoutCounts = gapAxes.every(a => typeof a.count === 'number');
+  const hasCurrentGap = gapAxes.some(a => a.current !== null && a.current !== undefined);
+  const tightAxes = gapAxes.filter(a =>
+    typeof a.current === 'number' && typeof a.setting === 'number' && a.current < a.setting);
+  const fmtVal = (v?: number | null) => (typeof v === 'number' ? fmtNum(v) : '—');
+  const totalBoxes = hasLayoutCounts ? gapAxes.reduce((t, a) => t * (a.count as number), 1) : null;
+
+  // Uyarı metni için parçalar
+  const tightNames = tightAxes.map((a, i) => (i === 0 ? a.label : a.label.toLocaleLowerCase('tr-TR')));
+  const tightDirText = tightNames.length <= 1
+    ? tightNames.join('')
+    : `${tightNames.slice(0, -1).join(', ')} ve ${tightNames[tightNames.length - 1]}`;
+  const tightSentence =
+    tightAxes.length === 0 ? '' :
+    tightAxes.length === 1
+      ? `${tightDirText} yönündeki mevcut boşluk, gerekli boşluğun altında. `
+      : `${tightDirText} yönlerindeki mevcut boşluklar, gerekli boşluğun altında. `;
+
+  const fieldBoxCount = currentPerCarton ?? totalBoxes;
+  const fieldCountText = fieldBoxCount !== null ? String(fmtNum(fieldBoxCount)) : null;
+  const overPercent = isOverFull ? (currentCartonUtil! - 100).toFixed(2).replace('.', ',') : null;
+
+  let warnTitle = '';
+  let warnBody = '';
+  if (isOverFull) {
+    warnTitle = 'Mevcut yerleşim koli kapasitesini aşıyor.';
+    warnBody =
+      `Tanımlanan koli ve yerleşim kısıtları doğrultusunda ${fieldCountText ? `${fieldCountText} kutuluk yerleşim` : 'mevcut yerleşim'} için %${overPercent} ek kapasite gerekiyor.` +
+      (isOwnCartonWorse && fieldCountText
+        ? ` Bu kısıtlarla ${bestOwnCarton} kutu yerleştirilebiliyor.`
+        : '');
+  } else if (isOwnCartonWorse) {
+    warnTitle = 'Mevcut kutu sayısının tamamı koliye yerleştirilemiyor.';
+    warnBody = fieldCountText
+      ? `Tanımlanan koli ve yerleşim kısıtları doğrultusunda ${bestOwnCarton} kutu yerleştirilebiliyor.`
+      : `Tanımlanan koli ve yerleşim kısıtları doğrultusunda ${bestOwnCarton} kutu yerleştirilebiliyor.`;
+  }
+
   return (
     <div style={{ padding: '16px', backgroundColor: 'white' }}>
       {/* Product Info Cards */}
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+        gridTemplateColumns: showGapCard
+          ? 'minmax(220px, 1fr) minmax(300px, 1.2fr) minmax(420px, 1.6fr)'
+          : 'repeat(auto-fit, minmax(250px, 1fr))',
         gap: '16px', 
         marginBottom: '24px' 
       }}>
@@ -754,7 +834,7 @@ const ProductDetail: React.FC<{
                   if (apiResponse.products && Array.isArray(apiResponse.products)) {
                     const product = apiResponse.products.find(p => p.ProductKey === productName);
                     if (product && typeof product.CurrentCartonUtilization === 'number') {
-                      return `${product.CurrentCartonUtilization.toFixed(2)}%`;
+                      return `%${product.CurrentCartonUtilization.toFixed(2)}`;
                     }
                   }
                   return 'N/A';
@@ -764,7 +844,7 @@ const ProductDetail: React.FC<{
                   if (apiResponse.products && Array.isArray(apiResponse.products)) {
                     const product = apiResponse.products.find(p => p.ProductKey === productName);
                     if (product && typeof product.CurrentPalletUtilization === 'number') {
-                      return `${product.CurrentPalletUtilization.toFixed(2)}%`;
+                      return `%${product.CurrentPalletUtilization.toFixed(2)}`;
                     }
                   }
                   return 'N/A';
@@ -773,7 +853,89 @@ const ProductDetail: React.FC<{
             </div>
           </div>
         )}
+                {/* Current Gap Card - shown when current layout conflicts with the defined gap settings */}
+        {apiResponse && apiResponse.BestCombinations && showGapCard && (
+          <div style={{ padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px' }}>
+              <h5 style={{ margin: 0, color: '#495057', fontSize: '14px', fontWeight: 600 }}>
+                Mevcut Boşluklar
+              </h5>
+              <span style={{ backgroundColor: '#fdecea', color: '#b71c1c', border: '1px solid #f5c2c7', borderRadius: '12px', padding: '2px 10px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                ⚠ Uyuşmuyor
+              </span>
+            </div>
 
+            {/* Table */}
+            {hasCurrentGap && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: '#fff', borderRadius: '6px', overflow: 'hidden' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#eef2f7', color: '#495057' }}>
+                      {['Yön', 'Gerekli Boşluk (mm)', 'Sahadaki Boşluk (mm)', 'Sahadaki Kutu Sayısı', 'Durum'].map(h => (
+                        <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Yön' ? 'left' : 'center', fontWeight: 600, fontSize: '12px', lineHeight: 1.3 }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gapAxes.map(a => {
+                      const isTight = tightAxes.includes(a);
+                      const known = typeof a.current === 'number' && typeof a.setting === 'number';
+                      return (
+                        <tr key={a.label} style={{ borderTop: '1px solid #e9ecef' }}>
+                          <td style={{ padding: '8px', fontWeight: 600 }}>{a.label}</td>
+                          <td style={{ padding: '8px', textAlign: 'center' }}>{fmtVal(a.setting)}</td>
+                          <td style={{ padding: '8px', textAlign: 'center', color: isTight ? '#b71c1c' : undefined, fontWeight: isTight ? 600 : undefined }}>
+                            {fmtVal(a.current)}
+                          </td>
+                          <td style={{ padding: '8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {typeof a.count === 'number' ? `${a.count} ${a.unit}` : '—'}
+                          </td>
+                          <td style={{ padding: '8px', textAlign: 'center' }}>
+                            {known ? (
+                              <span style={{
+                                display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
+                                backgroundColor: isTight ? '#fdecea' : '#e8f5e9',
+                                color: isTight ? '#b71c1c' : '#2e7d32',
+                                border: `1px solid ${isTight ? '#f5c2c7' : '#c8e6c9'}`
+                              }}>
+                                {isTight ? '✕ Uygunsuz' : '✓ Uygun'}
+                              </span>
+                            ) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {totalBoxes !== null && (
+                    <tfoot>
+                      <tr style={{ borderTop: '2px solid #e9ecef', backgroundColor: '#f8f9fa' }}>
+                        <td colSpan={5} style={{ padding: '8px' }}>
+                          <strong>Sahadaki yerleşim:</strong> {gapAxes.map(a => a.count).join(' × ')} = <strong style={{ color: '#b71c1c' }}>{totalBoxes} kutu</strong>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+
+            {/* Warning */}
+            <div style={{ marginTop: hasCurrentGap ? '12px' : 0, display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', backgroundColor: '#fdecea', border: '1px solid #f5c2c7', borderRadius: '6px' }}>
+              <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
+              <div>
+                <div style={{ color: '#b71c1c', fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>
+                  {warnTitle}
+                </div>
+                <div style={{ color: '#495057', fontSize: '13px' }}>
+                  {warnBody}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* API Response Info Card - Only show for new API responses */}
         {apiResponse && defaultCombinations && defaultCombinations[productName] && (
           <div style={{ 
@@ -1121,6 +1283,17 @@ const Result: React.FC = () => {
                 DefaultCartonKey: product.defaultCartonKey,
                 CurrentCartonUtilization: product.currentCartonUtilization,
                 CurrentPalletUtilization: product.currentPalletUtilization,
+                // Current gaps
+                CurrentGapWidth: product.currentGapWidth,
+                CurrentGapThickness: product.currentGapThickness,
+                CurrentGapHeight: product.currentGapHeight,
+                CurrentLayoutNote: product.currentLayoutNote,
+                CurrentCountWidth: product.currentCountWidth,
+                CurrentCountThickness: product.currentCountThickness,
+                CurrentCountHeight: product.currentCountHeight,
+                CurrentBoxEdgeWidth: product.currentBoxEdgeWidth,
+                CurrentBoxEdgeThickness: product.currentBoxEdgeThickness,
+                CurrentBoxEdgeHeight: product.currentBoxEdgeHeight,
                 // Product details
                 BoxKey: product.boxKey,
                 IsBundleRequired: product.isBundleRequired,
@@ -1850,12 +2023,12 @@ const Result: React.FC = () => {
       console.log(apiResponse);
       // New API response structure - Updated to match the required table structure
       const headers = [
-        'Option', 'Urun', 'Koli', 'Kolileme Yontemi', 'Koli ici bundle/kutu sayisi',
+        'Option', 'Urun', 'Koli', 'Kolileme Yontemi', 'Koli ici adet',
         'Koli Utilization (%)', 'Mevcut Koli Utilization (%)', 'Koli Utilization Iyilesme (%)',
         'Palet ici kutu sayisi', 'Palet ici bundle sayisi', 'Palet ici koli sayisi',
         'Palet Utilization (%)', 'Mevcut Palet Utilization (%)', 'Palet Utilization Iyilesme (%)',
         'Toplam Koli Sayisi', 'Koli Maliyeti (₺)', 'Toplam Palet Sayisi', 'Palet Maliyeti (₺)',
-        'Elleçleme Maliyeti (₺)', 'Toplam Maliyet (₺)', 'CO2e (Kg)'
+        'Elleçleme Maliyeti (₺)', 'Toplam Maliyet (₺)', 'CO2e (Kg)','Koli ici bundle sayisi'
       ];
       
       // Convert API response to table rows with correct mapping
@@ -1895,7 +2068,14 @@ const Result: React.FC = () => {
           combo.TotalPalletCost?.toString() || '',
           combo.TotalHandlingCost?.toString() || '',
           combo.TotalCost?.toString() || '',
-          combo.CO2e?.toString() || ''
+          combo.CO2e?.toString() || '',
+          (() => {
+            const cd: any = (combo as any).CombinationDetails;
+            const nx = cd?.numBundleX ?? cd?.NumBundleX;
+            const ny = cd?.numBundleY ?? cd?.NumBundleY;
+            const nz = cd?.numBundleZ ?? cd?.NumBundleZ;
+            return [nx, ny, nz].every(v => typeof v === 'number') ? String(nx * ny * nz) : '';
+          })()
         ];
         rows.push(row);
       });
@@ -2698,7 +2878,7 @@ const Result: React.FC = () => {
                     border: '1px solid #e9ecef' 
                   }}>
                     <div style={{ fontWeight: '600', fontSize: '12px', marginBottom: '4px', color: '#495057' }}>
-                      El Gap Ayarları
+                      Manuel Kolileme Boşlukları
                     </div>
                     <div style={{ fontSize: '11px', color: '#6c757d' }}>
                       <div>Genişlik: {defaultValues.HandGapWidth}</div>
@@ -2715,7 +2895,7 @@ const Result: React.FC = () => {
                     border: '1px solid #e9ecef' 
                   }}>
                     <div style={{ fontWeight: '600', fontSize: '12px', marginBottom: '4px', color: '#495057' }}>
-                      Makine Gap Ayarları
+                      Makine Kolileme Boşlukları
                     </div>
                     <div style={{ fontSize: '11px', color: '#6c757d' }}>
                       <div>Genişlik: {defaultValues.MachineGapWidth}</div>

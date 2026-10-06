@@ -192,6 +192,16 @@ export interface Product {
   DefaultCartonKey: string;
   CurrentCartonUtilization?: number;
   CurrentPalletUtilization?: number;
+  CurrentGapWidth?: number | null;
+  CurrentGapThickness?: number | null;
+  CurrentGapHeight?: number | null;
+  CurrentLayoutNote?: string | null;
+  CurrentCountWidth?: number | null;
+  CurrentCountThickness?: number | null;
+  CurrentCountHeight?: number | null;
+  CurrentBoxEdgeWidth?: number | null;
+  CurrentBoxEdgeThickness?: number | null;
+  CurrentBoxEdgeHeight?: number | null;
   BoxKey?: string;
   IsBundleRequired?: boolean;
   IsCartonRequired?: string;
