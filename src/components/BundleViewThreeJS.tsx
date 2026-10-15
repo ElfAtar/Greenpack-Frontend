@@ -1,15 +1,22 @@
 import { useMemo } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { Edges, PerspectiveCamera } from '@react-three/drei';
-import { MathUtils } from 'three';
 import type { BundleDto, BoxDto } from '../types/visualization';
+import { getBundleCamera } from '../utils/bundleCamera';
 
 interface Props {
   bundle: BundleDto;
   box: BoxDto;
 }
 
-export default function BundleViewThreeJS({ bundle, box: _box }: Props) {
+function BundleCamera({ width, height, thickness }: { width: number; height: number; thickness: number }) {
+  const size = useThree(state => state.size);
+  const aspect = size.width / Math.max(size.height, 1);
+  const camera = useMemo(() => getBundleCamera(width, height, thickness, aspect), [width, height, thickness, aspect]);
+  return <PerspectiveCamera makeDefault {...camera} onUpdate={self => self.lookAt(0, 0, 0)} />;
+}
+
+export default function BundleViewThreeJS({ bundle }: Props) {
   const countX = bundle.numBoxX ?? 1;
   const countY = bundle.numBoxY ?? 1;
   const countZ = bundle.numBoxZ ?? 1;
@@ -28,41 +35,17 @@ export default function BundleViewThreeJS({ bundle, box: _box }: Props) {
   const totalX = countX * sx + (countX - 1) * spacing;
   const totalY = countY * sy + (countY - 1) * spacing;
   const totalZ = countZ * sz + (countZ - 1) * spacing;
-  const maxDim = Math.max(totalX, totalY, totalZ);
 
   // center offsets so the bundle is around (0,0,0)
   const offsetX = -totalX / 2 + sx / 2;
   const offsetY = -totalY / 2 + sy / 2;
   const offsetZ = -totalZ / 2 + sz / 2;
 
-  // Camera configuration
-  const FOV = 40;
-  const camera = useMemo(() => {
-    // distance to fit the largest dimension in view for this FOV
-    const distFit = (maxDim / 2) / Math.tan(MathUtils.degToRad(FOV / 2));
-    const dist = distFit * 1.3; // margin so it doesn't touch edges
-
-     // angles chosen to show top + front (+Z) + right (+X)
-     const phi = MathUtils.degToRad(60);   // elevation
-     const theta = MathUtils.degToRad(150); // azimuth; horizontal rotation to show right side better
-
-    const x = dist * Math.sin(phi) * Math.cos(theta); // +X
-    const y = dist * Math.cos(phi);                   // +Y
-    const z = dist * Math.sin(phi) * Math.sin(theta); // +Z
-
-    return { position: [x, y, z] as [number, number, number] };
-  }, [maxDim]);
-
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas gl={{ preserveDrawingBuffer: true }}>
         {/* Fixed camera looking at the origin; no controls so it won't move */}
-        <PerspectiveCamera
-          makeDefault
-          fov={FOV}
-          position={camera.position}
-          onUpdate={(self) => self.lookAt(0, 0, 0)}
-        />
+        <BundleCamera width={totalX} height={totalY} thickness={totalZ} />
 
          {/* Lighting */}
          <ambientLight intensity={0.6} />

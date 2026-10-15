@@ -2,6 +2,7 @@ import React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Edges, Text } from '@react-three/drei';
 import type { PalletDto } from '../types/visualization';
+import FittedPalletScene from './FittedPalletScene';
 
 /** Axes
  *  X = pallet.width  (t1/t2, long side)
@@ -402,33 +403,19 @@ export default function PalletViewThreeJS({ pallet }: { pallet: PalletDto }) {
   const xAfterW1 = computeXAfterW1(dims.width, carton, mapping.h, mapping.w1, mapping.t1, mapping.t2, GAP);
 
 
-  // Compute palletHeight for camera and label placement
-  const palletHeight = num((pallet as any)?.stackHeight) || (carton.height ? carton.height * layersFromH(mapping.h) : 100);
   const displayPalletHeight = 130;
-
-  // Center the pallet visually and set a fixed camera angle
-  // Remove OrbitControls for a static view
-  // Camera looks at the center of the pallet from a fixed isometric-like angle
-  // Calculate a camera distance that fits the entire pallet in view
-  const maxDim = Math.max(dims.width, dims.length, palletHeight);
-  const camDist = maxDim * 2.5;
-  const camY = palletHeight * 3 + dims.baseThickness;
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 0, display: 'flex', alignItems: 'flex-start', position: 'relative' }}>
       <Canvas
         gl={{ preserveDrawingBuffer: true }}
-        camera={{
-          position: [camDist*2, camY*1.5, camDist*2],
-          fov: 20,
-          near: 1,
-          far: 10000,
-        }}
+        camera={{ fov: 25, near: 0.1, far: 10000 }}
         style={{ background: 'white' }}
       >
         <ambientLight intensity={0.9} />
         <directionalLight position={[80, 140, 60]} intensity={0.65} />
 
 
+        <FittedPalletScene>
         <PalletBase pallet={dims} />
 
         {/* w1: -Z → +Z, columns from -X → +X with centered arrows on −X and −Z */}
@@ -459,6 +446,7 @@ export default function PalletViewThreeJS({ pallet }: { pallet: PalletDto }) {
           startZ={zAfterW1}
         />
 
+        </FittedPalletScene>
         {/* No OrbitControls: view is fixed */}
       </Canvas>
 
@@ -474,7 +462,7 @@ export default function PalletViewThreeJS({ pallet }: { pallet: PalletDto }) {
         <div style={{
           position: 'absolute',
           bottom: '35%',
-          left: '30%',
+          left: '20%',
           transform: 'translateY(-50%)',
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
           padding: '2px 4px',
@@ -491,7 +479,7 @@ export default function PalletViewThreeJS({ pallet }: { pallet: PalletDto }) {
 
         <div style={{
           position: 'absolute',
-          right: '30%',
+          right: '20%',
           top: '58%',
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
           padding: '2px 4px',

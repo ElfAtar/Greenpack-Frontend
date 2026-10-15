@@ -658,12 +658,6 @@ const ProductDetail: React.FC<{
   const tightDirText = tightNames.length <= 1
     ? tightNames.join('')
     : `${tightNames.slice(0, -1).join(', ')} ve ${tightNames[tightNames.length - 1]}`;
-  const tightSentence =
-    tightAxes.length === 0 ? '' :
-    tightAxes.length === 1
-      ? `${tightDirText} yönündeki mevcut boşluk, gerekli boşluğun altında. `
-      : `${tightDirText} yönlerindeki mevcut boşluklar, gerekli boşluğun altında. `;
-
   const fieldBoxCount = currentPerCarton ?? totalBoxes;
   const fieldCountText = fieldBoxCount !== null ? String(fmtNum(fieldBoxCount)) : null;
   const overPercent = isOverFull ? (currentCartonUtil! - 100).toFixed(2).replace('.', ',') : null;
